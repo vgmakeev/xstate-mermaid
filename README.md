@@ -1,6 +1,6 @@
 # xstate-dsl
 
-> Compact text DSL for [XState v5](https://stately.ai/docs/xstate) state machines, designed for LLM agents. ~4x compression vs JSON/TS config with zero semantic loss.
+> Mermaid-inspired compact text DSL for [XState v5](https://stately.ai/docs/xstate) state machines, designed for LLM agents. ~4x compression vs JSON/TS config with zero semantic loss.
 
 ## Why
 
