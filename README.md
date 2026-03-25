@@ -7,8 +7,8 @@
 XState v5 configs are verbose JSON/TypeScript — expensive in LLM context tokens and slow to generate. This DSL solves three problems:
 
 1. **Faster generation** — an LLM agent outputs ~4x fewer tokens to describe the same state machine, which directly speeds up generation
-2. **Cheaper to read** — `.dsl` files in the repo are compact and unambiguous, so agents parse the full machine logic in a fraction of the context window
-3. **State machine as spec** — a `.dsl` file can serve as a living specification for your SDLC: define workflows, hand them to agents for implementation, then roundtrip back to verify nothing was lost
+2. **Cheaper to read** — `.md` files with `mermaid` code blocks in the repo are compact and unambiguous, so agents parse the full machine logic in a fraction of the context window
+3. **State machine as spec** — an `.md` file can serve as a living specification for your SDLC: define workflows, hand them to agents for implementation, then roundtrip back to verify nothing was lost
 
 The syntax is Mermaid-inspired — not fully compatible, but close enough to be largely renderable by Mermaid tools while carrying full XState v5 semantics.
 
@@ -38,7 +38,7 @@ state yellow
 
 ```bash
 # One-liner via uvx (no install needed)
-uvx --from "git+https://github.com/vgmakeev/xstate-mermaid.git" xstate-dsl dsl2xstate machine.dsl
+uvx --from "git+https://github.com/vgmakeev/xstate-mermaid.git" xstate-dsl dsl2xstate machine.md
 
 # Or install globally
 uv tool install "git+https://github.com/vgmakeev/xstate-mermaid.git"
@@ -50,16 +50,16 @@ uv tool install "git+https://github.com/vgmakeev/xstate-mermaid.git"
 
 ```bash
 # DSL -> XState v5 JSON
-xstate-dsl dsl2xstate machine.dsl
+xstate-dsl dsl2xstate machine.md
 
 # XState v5 JSON -> DSL
 xstate-dsl xstate2dsl machine.json
 
 # Roundtrip verification
-xstate-dsl roundtrip machine.dsl
+xstate-dsl roundtrip machine.md
 
 # Pipe from stdin, write to file
-cat machine.dsl | xstate-dsl dsl2xstate - -o output.json
+cat machine.md | xstate-dsl dsl2xstate - -o output.json
 ```
 
 ### Python API
@@ -171,7 +171,7 @@ state dashboard [type: parallel]
 
 ### Example: Order Flow
 
-See [`orderflow.dsl`](orderflow.dsl) for a complete example with parallel processing, invocations, guards, and error handling.
+See [`orderflow.md`](orderflow.md) for a complete example with parallel processing, invocations, guards, and error handling.
 
 ## Compression Ratio
 

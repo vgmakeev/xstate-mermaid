@@ -1,3 +1,6 @@
+# Order Flow
+
+```mermaid
 machine: orderFlow
 version: 1.0.0
 context: {
@@ -71,3 +74,4 @@ state supportNeeded
 
 state cancelled [type: final]
   entry: rollbackAll
+```
