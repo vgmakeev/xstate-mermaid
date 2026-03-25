@@ -10,6 +10,8 @@ XState v5 configs are verbose JSON/TypeScript — expensive in LLM context token
 2. **Cheaper to read** — `.dsl` files in the repo are compact and unambiguous, so agents parse the full machine logic in a fraction of the context window
 3. **State machine as spec** — a `.dsl` file can serve as a living specification for your SDLC: define workflows, hand them to agents for implementation, then roundtrip back to verify nothing was lost
 
+The syntax is Mermaid-inspired — not fully compatible, but close enough to be largely renderable by Mermaid tools while carrying full XState v5 semantics.
+
 ```
 machine: trafficLight
 
