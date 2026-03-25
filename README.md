@@ -1,52 +1,17 @@
-# xstate-dsl — Bidirectional XState v5 DSL Converter
+# xstate-dsl
 
-Compact text DSL for describing XState v5 machines with bidirectional conversion to JSON config. ~4x compression with zero semantic loss.
+> Compact text DSL for [XState v5](https://stately.ai/docs/xstate) state machines, designed for LLM agents. ~4x compression vs JSON/TS config with zero semantic loss.
 
-## Install
+## Why
 
-```bash
-uv tool install ./xstate-mermaid
-```
+XState v5 configs are verbose JSON/TypeScript — expensive in LLM context tokens and slow to generate. This DSL solves three problems:
 
-## Quick Start
-
-```bash
-# DSL -> XState v5 JSON
-xstate-dsl dsl2xstate input.dsl
-
-# XState v5 JSON -> DSL
-xstate-dsl xstate2dsl machine.json
-
-# Roundtrip (DSL -> JSON -> DSL, verify losslessness)
-xstate-dsl roundtrip input.dsl
-
-# Stdin / output file
-cat file.dsl | xstate-dsl dsl2xstate -
-xstate-dsl dsl2xstate input.dsl -o output.json
-
-# Without installing (one-off)
-uvx --from ./xstate-mermaid xstate-dsl dsl2xstate input.dsl
-```
-
-### Python API
-
-```python
-from xstate_dsl import parse, to_xstate, to_dsl
-
-machine = parse(dsl_text)           # DSL -> AST
-config  = to_xstate(machine)        # AST -> {setup, config}
-dsl_out = to_dsl(xstate_config)     # JSON config -> DSL
-```
-
-## DSL Format
-
-Full specification — [xstate-dsl-spec.md](xstate-dsl-spec.md).
-
-### Minimal Example
+1. **Faster generation** — an LLM agent outputs ~4x fewer tokens to describe the same state machine, which directly speeds up generation
+2. **Cheaper to read** — `.dsl` files in the repo are compact and unambiguous, so agents parse the full machine logic in a fraction of the context window
+3. **State machine as spec** — a `.dsl` file can serve as a living specification for your SDLC: define workflows, hand them to agents for implementation, then roundtrip back to verify nothing was lost
 
 ```
 machine: trafficLight
-context: { color: "red" }
 
 state red [initial]
   TIMER -> green
@@ -58,181 +23,181 @@ state yellow
   TIMER -> red
 ```
 
-### Supported Features
+## Features
+
+- **DSL -> XState v5 JSON** — write state machines in a concise, readable format
+- **XState v5 JSON -> DSL** — convert existing machines to compact DSL
+- **Roundtrip verification** — `DSL -> JSON -> DSL` to prove losslessness
+- **Full XState v5 coverage** — parallel states, invocations, guards, actions, history, nested hierarchies
+- **~4x compression** vs equivalent TypeScript/JSON config
+- **Python API** — `parse()`, `to_xstate()`, `to_dsl()` for programmatic use
+
+## Installation
+
+```bash
+# With uv (recommended)
+uv tool install ./xstate-mermaid
+
+# Or with pip
+pip install ./xstate-mermaid
+```
+
+## Usage
+
+### CLI
+
+```bash
+# DSL -> XState v5 JSON
+xstate-dsl dsl2xstate machine.dsl
+
+# XState v5 JSON -> DSL
+xstate-dsl xstate2dsl machine.json
+
+# Roundtrip verification
+xstate-dsl roundtrip machine.dsl
+
+# Pipe from stdin, write to file
+cat machine.dsl | xstate-dsl dsl2xstate - -o output.json
+```
+
+### Python API
+
+```python
+from xstate_dsl import parse, to_xstate, to_dsl
+
+machine = parse(dsl_text)           # DSL text -> AST
+config  = to_xstate(machine)        # AST -> XState v5 config dict
+dsl_out = to_dsl(xstate_config)     # XState v5 config -> DSL text
+```
+
+## DSL Syntax
+
+Full specification: [xstate-dsl-spec.md](xstate-dsl-spec.md)
+
+### Quick Reference
 
 ```
-# Machine header
 machine: <id>
 version: <semver>
 context: { key: type = default, ... }
 input: { key: type, ... }
 output: { key: type, ... }
 
-# States
-state <name> [type: parallel | final | history | history.deep]
-             [initial: <child>] [initial]
-             [tags: a, b] [id: x] [description: "..."]
+state <name> [type: parallel|final|history|history.deep]
+             [initial] [initial: <child>] [tags: a, b] [id: x]
+  entry: action1, action2
+  exit: action1
 
-# Entry / exit
-entry: action1, action2
-exit: action1
+  # Transitions
+  EVENT [guard] / action -> target
+  always [guard] / action -> target
+  after: 3000 [guard] / action -> target
+  * / action -> target                     # wildcard
 
-# Transitions
-EVENT [guards] / actions -> target
-always [guard] / action -> target
-after: <ms|ref> [guard] / action -> target
-* / action -> target                           # wildcard
+  # Invocations
+  invoke: fetchData [id: fetcher, input: { ... }]
+    done / assignResult -> success
+    error / assignError -> failure
+```
 
-# Guards
-[name]              # simple
-[!name]             # not
-[a, b]              # and
-[a | b]             # or
-[name(param: val)]  # with params
-[else]              # fallback
+<details>
+<summary><strong>Guards</strong></summary>
 
-# Actions
-/ name                    # reference
-/ assign({...})           # inline assign
-/ raise(EVENT)            # raise
-/ sendTo(ref, {...})      # send to actor
-/ sendParent({...})       # send to parent
-/ emit({...})             # emit to subscribers
-/ spawn(machine, {...})   # spawn child actor
-/ stop(ref)               # stop actor
+```
+[name]                  # simple reference
+[!name]                 # negation
+[a, b]                  # AND
+[a | b]                 # OR
+[name(key: val)]        # parameterized
+[else]                  # fallback (no guard)
+```
 
-# Invoke
-invoke: <src> [id: x, input: {...}, systemId: x]
-  done / action -> target
-  error / action -> target
+</details>
 
-# Nested states (via indentation)
-state parent [initial: child]
-  state child
+<details>
+<summary><strong>Actions</strong></summary>
 
-# Parallel regions
+```
+/ name                  # reference
+/ assign({...})         # inline assign
+/ raise(EVENT)          # raise event
+/ sendTo(ref, {...})    # send to actor
+/ sendParent({...})     # send to parent
+/ emit({...})           # emit to subscribers
+/ spawn(machine, {...}) # spawn child actor
+/ stop(ref)             # stop actor
+/ log("msg")            # log
+```
+
+</details>
+
+<details>
+<summary><strong>Target modifiers</strong></summary>
+
+```
+-> target               # standard
+->@ target              # reenter: true
+-> #stateId             # by ID (cross-tree)
+-> .child               # relative child
+-> ..sibling            # relative sibling
+-> region1.a & region2.b  # parallel targets
+```
+
+</details>
+
+<details>
+<summary><strong>Parallel states & regions</strong></summary>
+
+```
 state dashboard [type: parallel]
+
   region notifications [initial: idle]
     state idle
+      NEW_NOTIF / addNotif -> showing
     state showing
+      after: 3000 -> idle
+
   region feed [initial: polling]
     state polling
+      invoke: pollData
+        done / updateFeed ->@ polling
     state paused
-
-# Target modifiers
--> target           # standard
-->@ target          # reenter: true
--> #stateId         # by ID (cross-tree)
--> .child           # child
--> ..sibling        # sibling
+      RESUME -> polling
 ```
 
-### Full Example
+</details>
 
-```
-machine: orderFlow
-version: 1.0.0
-context: {
-  items: [],
-  total: 0,
-  error: null,
-  retries: 0
-}
-input: { userId: string, cartId: string }
+### Example: Order Flow
 
-state idle [initial] [tags: ready] [description: "Waiting for order"]
-  entry: resetForm
-  exit: clearErrors
-  SUBMIT [hasItems, isAuthed] / validateCart -> validating
-  SUBMIT [else] / showErrors
+See [`orderflow.dsl`](orderflow.dsl) for a complete example with parallel processing, invocations, guards, and error handling.
 
-state validating
-  invoke: validateOrder [id: validator, input: { items: context.items }]
-    done [isValid] / assignValidated -> confirming
-    done [else] / assignErrors -> editing
-    error / assignError -> editing
-  after: 10000 -> editing
+## Compression Ratio
 
-state editing
-  UPDATE_ITEM / assignItem
-  REMOVE_ITEM / removeItem, recalcTotal
-  SUBMIT [hasItems] -> validating
-  CANCEL / clearDraft -> idle
-
-state confirming
-  CONFIRM / setProcessing -> processing
-  BACK -> editing
-  CANCEL -> idle
-
-state processing [type: parallel]
-
-  region payment [initial: charging]
-    state charging
-      invoke: processPayment [id: paymentSvc]
-        done / assignPaymentResult -> charged
-        error [isRetryable] / incrementRetry -> retrying
-        error [else] / assignError -> failed
-    state retrying
-      after: 2000 -> charging
-      always [retries >= 3] -> failed
-    state charged [type: final]
-    state failed
-
-  region inventory [initial: reserving]
-    state reserving
-      invoke: reserveInventory
-        done / assignReservation -> reserved
-        error -> reserveFailed
-    state reserved [type: final]
-    state reserveFailed
-      RETRY_RESERVE -> reserving
-
-  done.state -> fulfilling
-
-state fulfilling
-  invoke: createShipment
-    done / assignTracking -> complete
-    error / assignError -> supportNeeded
-
-state complete [type: final]
-  entry: notifyComplete
-
-state supportNeeded
-  RESOLVED -> fulfilling
-  CANCEL -> cancelled
-
-state cancelled [type: final]
-  entry: rollbackAll
-```
-
-## Package Structure
-
-```
-xstate-mermaid/
-  pyproject.toml         # xstate-dsl package
-  xstate_dsl/
-    __init__.py          # public API: parse, to_xstate, to_dsl
-    __main__.py          # CLI entry point
-    models.py            # AST: Machine, StateNode, Transition, ...
-    parser.py            # DSL text -> Machine AST
-    to_xstate.py         # Machine AST -> XState v5 JSON config
-    to_dsl.py            # XState v5 JSON config -> DSL text
-  test_converter.py      # 18 tests
-  orderflow.dsl          # example — order flow
-  xstate-dsl-spec.md     # full DSL specification
-```
+| Scenario | XState TS | DSL | Ratio |
+|----------|-----------|-----|-------|
+| Simple machine (3 states) | ~40 lines | ~10 lines | **4x** |
+| Parallel + invoke | ~120 lines | ~35 lines | **3.4x** |
+| Full order flow | ~300 lines | ~80 lines | **3.7x** |
+| Setup + types boilerplate | ~50 lines | 2 lines | **25x** |
 
 ## Tests
 
 ```bash
-python xstate-mermaid/test_converter.py
+python test_converter.py
 ```
 
-## Compression
+## Project Structure
 
-| Scenario | XState TS | DSL | Ratio |
-|----------|-----------|-----|-------|
-| Simple machine (3 states) | ~40 lines | ~10 lines | 4x |
-| Parallel + invoke | ~120 lines | ~35 lines | 3.4x |
-| Full order flow | ~300 lines | ~80 lines | 3.7x |
-| Setup + types boilerplate | ~50 lines | 2 lines | 25x |
+```
+xstate_dsl/
+  __init__.py       # Public API: parse, to_xstate, to_dsl
+  __main__.py       # CLI entry point
+  models.py         # AST data classes
+  parser.py         # DSL text -> AST
+  to_xstate.py      # AST -> XState v5 JSON
+  to_dsl.py         # XState v5 JSON -> DSL text
+```
+
+## License
+
+MIT
