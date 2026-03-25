@@ -1,8 +1,12 @@
 [project]
 name = "xstate-dsl"
-version = "0.1.0"
-description = "Bidirectional XState v5 ↔ compact DSL converter"
+version = "0.2.0"
+description = "Standard Mermaid stateDiagram-v2 ↔ XState v5 bidirectional converter & validator"
 requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 xstate-dsl = "xstate_dsl.__main__:main"
@@ -10,3 +14,9 @@ xstate-dsl = "xstate_dsl.__main__:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["xstate_dsl*"]
+
+[tool.setuptools.package-data]
+xstate_dsl = ["_runtime/*.mjs", "_runtime/package.json"]

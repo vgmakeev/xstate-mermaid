@@ -1,0 +1,11 @@
+{
+  "name": "xstate-runtime-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test_machines.mjs"
+  },
+  "dependencies": {
+    "xstate": "^5"
+  }
+}

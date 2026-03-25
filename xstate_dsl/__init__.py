@@ -1,17 +1,21 @@
-"""XState v5 Compact DSL — bidirectional converter.
+"""Mermaid stateDiagram-v2 ↔ XState v5 bidirectional converter & validator.
 
 Usage:
-    from xstate_dsl import parse, to_xstate, to_dsl
+    from xstate_dsl import parse, to_xstate, to_mermaid, validate_static
 
-    # DSL → XState config
-    machine = parse(dsl_text)
+    # Mermaid → XState config
+    machine = parse(mermaid_text)
     config = to_xstate(machine)
 
-    # XState config → DSL
-    dsl_text = to_dsl(xstate_config)
+    # XState config → Mermaid
+    mermaid_text = to_mermaid(xstate_config)
+
+    # Validate
+    issues = validate_static(machine)
 """
 from .parser import parse
 from .to_xstate import to_xstate
-from .to_dsl import to_dsl
+from .to_mermaid import to_mermaid
+from .validate import validate_static
 
-__all__ = ["parse", "to_xstate", "to_dsl"]
+__all__ = ["parse", "to_xstate", "to_mermaid", "validate_static"]

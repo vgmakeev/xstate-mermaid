@@ -1,0 +1,9 @@
+{
+  "initial": "red",
+  "steps": [
+    { "send": "TIMER", "expect": "green" },
+    { "send": "TIMER", "expect": "yellow" },
+    { "send": "TIMER", "expect": "red" },
+    { "send": "TIMER", "expect": "green" }
+  ]
+}

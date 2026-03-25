@@ -1,77 +1,97 @@
 # Order Flow
 
 ```mermaid
-machine: orderFlow
-version: 1.0.0
-context: {
-  items: [],
-  total: 0,
-  error: null,
-  retries: 0
-}
-input: { userId: string, cartId: string }
+stateDiagram-v2
+    %% machine: orderFlow
+    %% version: 1.0.0
+    %% context: {
+    %%   items: [],
+    %%   total: 0,
+    %%   error: null,
+    %%   retries: 0
+    %% }
+    %% input: { userId: string, cartId: string }
 
-state idle [initial] [tags: ready] [description: "Waiting for order"]
-  entry: resetForm
-  exit: clearErrors
-  SUBMIT [hasItems, isAuthed] / validateCart -> validating
-  SUBMIT [else] / showErrors
+    [*] --> idle
+    idle --> validating : SUBMIT [hasItems, isAuthed] / validateCart
+    idle --> idle : SUBMIT [else] / showErrors
 
-state validating
-  invoke: validateOrder [id: validator, input: { items: context.items }]
-    done [isValid] / assignValidated -> confirming
-    done [else] / assignErrors -> editing
-    error / assignError -> editing
-  after: 10000 -> editing
+    validating --> confirming : done [isValid] / assignValidated
+    validating --> editing : done [else] / assignErrors
+    validating --> editing : error / assignError
+    validating --> editing : after 10000
 
-state editing
-  UPDATE_ITEM / assignItem
-  REMOVE_ITEM / removeItem, recalcTotal
-  SUBMIT [hasItems] -> validating
-  CANCEL / clearDraft -> idle
+    editing --> editing : UPDATE_ITEM / assignItem
+    editing --> editing : REMOVE_ITEM / removeItem, recalcTotal
+    editing --> validating : SUBMIT [hasItems]
+    editing --> idle : CANCEL / clearDraft
 
-state confirming
-  CONFIRM / setProcessing -> processing
-  BACK -> editing
-  CANCEL -> idle
+    confirming --> processing : CONFIRM / setProcessing
+    confirming --> editing : BACK
+    confirming --> idle : CANCEL
 
-state processing [type: parallel]
+    processing --> fulfilling : done.state
 
-  region payment [initial: charging]
-    state charging
-      invoke: processPayment [id: paymentSvc]
-        done / assignPaymentResult -> charged
-        error [isRetryable] / incrementRetry -> retrying
-        error [else] / assignError -> failed
-    state retrying
-      after: 2000 -> charging
-      always [retries >= 3] -> failed
-    state charged [type: final]
-    state failed
+    fulfilling --> complete : done / assignTracking
+    fulfilling --> supportNeeded : error / assignError
 
-  region inventory [initial: reserving]
-    state reserving
-      invoke: reserveInventory
-        done / assignReservation -> reserved
-        error -> reserveFailed
-    state reserved [type: final]
-    state reserveFailed
-      RETRY_RESERVE -> reserving
+    complete --> [*]
 
-  done.state -> fulfilling
+    supportNeeded --> fulfilling : RESOLVED
+    supportNeeded --> cancelled : CANCEL
 
-state fulfilling
-  invoke: createShipment
-    done / assignTracking -> complete
-    error / assignError -> supportNeeded
+    cancelled --> [*]
 
-state complete [type: final]
-  entry: notifyComplete
+    state idle {
+        %% entry: resetForm
+        %% exit: clearErrors
+        %% tags: ready
+        %% description: "Waiting for order"
+    }
 
-state supportNeeded
-  RESOLVED -> fulfilling
-  CANCEL -> cancelled
+    state validating {
+        %% invoke: validateOrder [id: validator, input: { items: context.items }]
+    }
 
-state cancelled [type: final]
-  entry: rollbackAll
+    state processing {
+        state payment {
+            [*] --> charging
+            charging --> charged : done / assignPaymentResult
+            charging --> retrying : error [isRetryable] / incrementRetry
+            charging --> failed : error [else] / assignError
+            retrying --> charging : after 2000
+            retrying --> failed : always [retries >= 3]
+            charged --> [*]
+
+            state charging {
+                %% invoke: processPayment [id: paymentSvc]
+            }
+        }
+        --
+        state inventory {
+            [*] --> reserving
+            reserving --> reserved : done / assignReservation
+            reserving --> reserveFailed : error
+            reserved --> [*]
+            reserveFailed --> reserving : RETRY_RESERVE
+
+            state reserving {
+                %% invoke: reserveInventory
+            }
+        }
+    }
+
+    state fulfilling {
+        %% invoke: createShipment
+    }
+
+    state complete {
+        %% type: final
+        %% entry: notifyComplete
+    }
+
+    state cancelled {
+        %% type: final
+        %% entry: rollbackAll
+    }
 ```

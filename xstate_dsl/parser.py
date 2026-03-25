@@ -1,4 +1,4 @@
-"""Parser: DSL text → Machine AST."""
+"""Parser: Mermaid stateDiagram-v2 text → Machine AST."""
 from __future__ import annotations
 import re
 from .models import (
@@ -8,78 +8,11 @@ from .models import (
 
 
 def parse(text: str) -> Machine:
-    """Parse DSL text into a Machine AST."""
-    lines = text.split("\n")
-    p = _Parser(lines)
-    return p.parse()
+    """Parse Mermaid stateDiagram-v2 text into a Machine AST."""
+    return _MermaidParser(text).parse()
 
 
 # ─── helpers ──────────────────────────────────────────────────────
-
-_RE_MACHINE = re.compile(r"^machine:\s*(.+)$")
-_RE_VERSION = re.compile(r"^version:\s*(.+)$")
-_RE_STATE = re.compile(r"^(\s*)(state|region)\s+(\w+)(.*)?$")
-_RE_TRANSITION = re.compile(
-    r"^(\s*)"                    # indent
-    r"(\*|[A-Z_][A-Z0-9_.]*)"   # event (or *)
-    r"(?:\s*\[([^\]]*)\])?"     # [guards]
-    r"(?:\s*/\s*(.+?))?"        # / actions
-    r"(?:\s*->([@]?)\s*(.+))?"  # -> target
-    r"\s*$"
-)
-_RE_ALWAYS = re.compile(
-    r"^(\s*)always"
-    r"(?:\s*\[([^\]]*)\])?"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-_RE_AFTER = re.compile(
-    r"^(\s*)after:\s*(\w+|\d+)"
-    r"(?:\s*\[([^\]]*)\])?"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-_RE_INVOKE = re.compile(r"^(\s*)invoke:\s*(\w+)(.*)?$")
-_RE_DONE = re.compile(
-    r"^(\s*)done(?:\.state)?"
-    r"(?:\s*\[([^\]]*)\])?"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-_RE_DONE_STATE = re.compile(r"^(\s*)done\.state")
-_RE_ERROR = re.compile(
-    r"^(\s*)error"
-    r"(?:\s*\[([^\]]*)\])?"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-_RE_ENTRY = re.compile(r"^(\s*)entry:\s*(.+)$")
-_RE_EXIT = re.compile(r"^(\s*)exit:\s*(.+)$")
-_RE_TARGET = re.compile(r"^(\s*)target:\s*(\w+)\s*$")
-_RE_OUTPUT = re.compile(r"^(\s*)output:\s*(.+)$")
-_RE_WILDCARD = re.compile(
-    r"^(\s*)\*"
-    r"(?:\s*\[([^\]]*)\])?"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-_RE_GUARDED_BRANCH = re.compile(
-    r"^(\s+)"
-    r"\[([^\]]*)\]"
-    r"(?:\s*/\s*(.+?))?"
-    r"(?:\s*->([@]?)\s*(.+))?"
-    r"\s*$"
-)
-
-
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
-
 
 def _parse_actions(text: str) -> list[Action]:
     """Parse comma-separated action list."""
@@ -90,14 +23,12 @@ def _parse_actions(text: str) -> list[Action]:
         part = part.strip()
         if not part:
             continue
-        # Check for built-in action patterns
         for kind in ("assign", "raise", "sendTo", "sendParent", "emit", "log", "spawn", "stop", "forwardTo"):
             if part.startswith(kind + "("):
                 args = part[len(kind)+1:].rstrip(")")
                 actions.append(Action(name=kind, kind=kind, args=args))
                 break
         else:
-            # Check for parameterized action: name(key: val, ...)
             m = re.match(r"(\w+)\((.+)\)$", part)
             if m:
                 params = _parse_params(m.group(2))
@@ -130,7 +61,6 @@ def _parse_guards(text: str) -> GuardExpr | None:
         return None
     text = text.strip()
     if "|" in text:
-        # OR groups, each element might be AND
         or_parts = [p.strip() for p in text.split("|")]
         children = []
         for p in or_parts:
@@ -179,345 +109,348 @@ def _parse_invoke_modifiers(text: str) -> dict:
             if ":" in part:
                 k, v = part.split(":", 1)
                 mods[k.strip()] = v.strip()
-    # Also check for src: outside brackets
     m2 = re.search(r"src:\s*(\w+)", text)
     if m2:
         mods["src"] = m2.group(1)
     return mods
 
 
-def _parse_state_modifiers(text: str) -> dict:
-    """Parse [modifier: value] blocks on state line."""
-    mods: dict = {}
-    # Find all [...] blocks
-    for m in re.finditer(r"\[([^\]]+)\]", text):
-        content = m.group(1).strip()
-        if content == "initial":
-            mods["is_initial"] = True
-            continue
-        if ":" in content:
-            key, val = content.split(":", 1)
-            key, val = key.strip(), val.strip()
-            if key == "type":
-                if val == "history.deep":
-                    mods["state_type"] = "history"
-                    mods["history_type"] = "deep"
-                elif val == "history":
-                    mods["state_type"] = "history"
-                    mods["history_type"] = "shallow"
-                else:
-                    mods["state_type"] = val
-            elif key == "initial":
-                mods["initial"] = val
-            elif key == "tags":
-                mods["tags"] = [t.strip() for t in val.split(",")]
-            elif key == "id":
-                mods["state_id"] = val
-            elif key == "description":
-                mods["description"] = val.strip('"')
-            elif key == "meta":
-                mods["meta"] = val
-    return mods
+# ─── Mermaid parser ──────────────────────────────────────────────
+
+_RE_STATE_BLOCK = re.compile(r'\s*state\s+(\w+)\s*\{\s*$')
+_RE_STATE_DESC = re.compile(r'\s*state\s+"([^"]+)"\s+as\s+(\w+)\s*$')
+_RE_TRANSITION = re.compile(r'\s*(\[\*\]|\w+)\s*-->\s*(\[\*\]|\w+)(?:\s*:\s*(.+))?\s*$')
 
 
-# ─── main parser ──────────────────────────────────────────────────
-
-class _Parser:
-    def __init__(self, lines: list[str]):
-        self.lines = lines
+class _MermaidParser:
+    def __init__(self, text: str):
+        self.lines = text.split('\n')
         self.pos = 0
-        self.machine = Machine(id="unnamed")
+        self.machine = Machine(id='unnamed')
 
     def parse(self) -> Machine:
-        while self.pos < len(self.lines):
-            line = self.lines[self.pos]
-            stripped = line.strip()
-
-            if not stripped or stripped.startswith("#"):
-                self.pos += 1
-                continue
-
-            m = _RE_MACHINE.match(stripped)
-            if m:
-                self.machine.id = m.group(1).strip()
-                self.pos += 1
-                continue
-
-            m = _RE_VERSION.match(stripped)
-            if m:
-                self.machine.version = m.group(1).strip()
-                self.pos += 1
-                continue
-
-            if stripped.startswith("context:"):
-                self.machine.context = self._collect_block("context:")
-                continue
-            if stripped.startswith("input:"):
-                self.machine.input = self._collect_block("input:")
-                continue
-            if stripped.startswith("output:") and _indent(line) == 0:
-                self.machine.output = self._collect_block("output:")
-                continue
-            if stripped.startswith("types:"):
-                self.machine.types = self._collect_block("types:")
-                continue
-
-            m = _RE_STATE.match(line)
-            if m:
-                state = self._parse_state(line)
-                self.machine.root_states[state.name] = state
-                if state.is_initial or not self.machine.initial:
-                    self.machine.initial = state.name
-                continue
-
-            m = _RE_WILDCARD.match(line)
-            if m:
-                t = self._parse_event_transition(m, wildcard=True)
-                self.machine.wildcard_transitions.append(t)
-                self.pos += 1
-                continue
-
-            self.pos += 1
-
+        self._skip_header()
+        self._parse_scope(None, self.machine.root_states, [])
+        if not self.machine.initial and self.machine.root_states:
+            self.machine.initial = next(iter(self.machine.root_states))
         return self.machine
 
-    def _collect_block(self, prefix: str) -> str:
-        """Collect a possibly multi-line block (e.g., context: { ... })."""
-        line = self.lines[self.pos].strip()
-        value = line[len(prefix):].strip()
-        self.pos += 1
-
-        if "{" in value and "}" not in value:
-            # Multi-line brace block
-            while self.pos < len(self.lines):
-                next_line = self.lines[self.pos]
-                value += "\n" + next_line
+    def _skip_header(self):
+        while self.pos < len(self.lines):
+            stripped = self.lines[self.pos].strip()
+            if stripped.startswith('stateDiagram'):
                 self.pos += 1
-                if "}" in next_line:
-                    break
-        elif "(" in value and ")" not in value:
-            while self.pos < len(self.lines):
-                next_line = self.lines[self.pos]
-                value += "\n" + next_line
+                return
+            if stripped and (stripped.startswith('%%') or stripped.startswith('[*]')
+                           or stripped.startswith('state') or _RE_TRANSITION.match(stripped)):
+                return
+            if not stripped:
                 self.pos += 1
-                if ")" in next_line:
-                    break
-        return value
+                continue
+            self.pos += 1
 
-    def _parse_state(self, first_line: str) -> StateNode:
-        m = _RE_STATE.match(first_line)
-        kind = m.group(2)  # 'state' or 'region'
-        name = m.group(3)
-        rest = m.group(4) or ""
-        base_indent = _indent(first_line)
-
-        mods = _parse_state_modifiers(rest)
-        node = StateNode(name=name, **{k: v for k, v in mods.items()})
-
-        self.pos += 1
-        current_invoke: Invocation | None = None
-        last_event_for_branches: str | None = None
+    def _parse_scope(self, parent: StateNode | None, states: dict[str, StateNode],
+                     ancestor_states: list[dict[str, StateNode]]):
+        """Parse a scope (root or inside state {}). Defers transition resolution."""
+        pending: list[tuple[str, str, str | None]] = []
 
         while self.pos < len(self.lines):
             line = self.lines[self.pos]
             stripped = line.strip()
-            ind = _indent(line)
 
-            if not stripped or stripped.startswith("#"):
+            if not stripped:
                 self.pos += 1
                 continue
-
-            # Must be indented deeper than state
-            if ind <= base_indent and stripped:
+            if stripped == '}':
+                self.pos += 1
                 break
+            if stripped == '--':
+                if parent:
+                    parent.state_type = 'parallel'
+                self.pos += 1
+                continue
+            if stripped.startswith('%%'):
+                self._handle_comment(parent, states)
+                continue
 
-            # entry / exit
-            me = _RE_ENTRY.match(line)
-            if me:
-                node.entry.extend(_parse_actions(me.group(2)))
+            m = _RE_STATE_DESC.match(line)
+            if m:
+                desc, name = m.group(1), m.group(2)
+                node = states.setdefault(name, StateNode(name=name))
+                node.description = desc
                 self.pos += 1
                 continue
 
-            mx = _RE_EXIT.match(line)
-            if mx:
-                node.exit.extend(_parse_actions(mx.group(2)))
+            m = _RE_STATE_BLOCK.match(line)
+            if m:
+                name = m.group(1)
+                node = states.setdefault(name, StateNode(name=name))
                 self.pos += 1
+                self._parse_scope(node, node.children, ancestor_states + [states])
                 continue
 
-            # target (for history states)
-            mt = _RE_TARGET.match(line)
-            if mt:
-                node.history_target = mt.group(2)
-                self.pos += 1
-                continue
-
-            # output (on final states)
-            mo = _RE_OUTPUT.match(line)
-            if mo:
-                node.output = mo.group(2).strip()
-                self.pos += 1
-                continue
-
-            # invoke
-            mi = _RE_INVOKE.match(line)
-            if mi:
-                invoke_indent = _indent(line)
-                src = mi.group(2)
-                invoke_rest = mi.group(3) or ""
-                mods = _parse_invoke_modifiers(invoke_rest)
-                inv = Invocation(
-                    src=mods.get("src", src),
-                    id=mods.get("id"),
-                    input=mods.get("input"),
-                    system_id=mods.get("systemId"),
-                )
-                node.invocations.append(inv)
-                current_invoke = inv
-                self.pos += 1
-                continue
-
-            # done / done.state / error under invoke
-            md = _RE_DONE.match(line)
-            is_done_state = bool(_RE_DONE_STATE.match(line))
-            if md:
-                t = Transition(
-                    guards=_parse_guards(md.group(2)),
-                    actions=_parse_actions(md.group(3)),
-                    reenter=md.group(4) == "@",
-                    target=md.group(5).strip() if md.group(5) else None,
-                )
-                if is_done_state:
-                    node.on_done.append(t)
-                elif current_invoke:
-                    current_invoke.on_done.append(t)
-                else:
-                    node.on_done.append(t)
-                self.pos += 1
-                continue
-
-            mer = _RE_ERROR.match(line)
-            if mer:
-                t = Transition(
-                    guards=_parse_guards(mer.group(2)),
-                    actions=_parse_actions(mer.group(3)),
-                    reenter=mer.group(4) == "@",
-                    target=mer.group(5).strip() if mer.group(5) else None,
-                )
-                if current_invoke:
-                    current_invoke.on_error.append(t)
-                self.pos += 1
-                continue
-
-            # always
-            ma = _RE_ALWAYS.match(line)
-            if ma:
-                current_invoke = None
-                t = Transition(
-                    guards=_parse_guards(ma.group(2)),
-                    actions=_parse_actions(ma.group(3)),
-                    reenter=ma.group(4) == "@",
-                    target=ma.group(5).strip() if ma.group(5) else None,
-                )
-                node.always.append(t)
-                self.pos += 1
-                continue
-
-            # after
-            maf = _RE_AFTER.match(line)
-            if maf:
-                current_invoke = None
-                delay = maf.group(2)
-                try:
-                    delay = int(delay)
-                except ValueError:
-                    pass
-                t = Transition(
-                    delay=delay,
-                    guards=_parse_guards(maf.group(3)),
-                    actions=_parse_actions(maf.group(4)),
-                    reenter=maf.group(5) == "@",
-                    target=maf.group(6).strip() if maf.group(6) else None,
-                )
-                node.after.append(t)
-                self.pos += 1
-                continue
-
-            # child state / region
-            ms = _RE_STATE.match(line)
-            if ms:
-                current_invoke = None
-                child = self._parse_state(line)
-                node.children[child.name] = child
-                if child.is_initial or (node.initial is None and not node.state_type == "parallel"):
-                    if node.initial is None:
-                        node.initial = child.name
-                continue
-
-            # guarded branch (continuation of previous event)
-            mb = _RE_GUARDED_BRANCH.match(line)
-            if mb and last_event_for_branches:
-                t = Transition(
-                    event=last_event_for_branches,
-                    guards=_parse_guards(mb.group(2)),
-                    actions=_parse_actions(mb.group(3)),
-                    reenter=mb.group(4) == "@",
-                    target=mb.group(5).strip() if mb.group(5) else None,
-                )
-                node.transitions.append(t)
-                self.pos += 1
-                continue
-
-            # wildcard
-            mw = _RE_WILDCARD.match(line)
-            if mw:
-                current_invoke = None
-                t = self._parse_event_transition_from_groups(
-                    "*", mw.group(2), mw.group(3), mw.group(4), mw.group(5)
-                )
-                node.transitions.append(t)
-                last_event_for_branches = "*"
-                self.pos += 1
-                continue
-
-            # normal event transition
-            mt = _RE_TRANSITION.match(line)
-            if mt:
-                current_invoke = None
-                event = mt.group(2)
-                # Check if next lines are guarded branches (event alone on line)
-                if not mt.group(3) and not mt.group(4) and not mt.group(6):
-                    # Bare event — check for branches below
-                    last_event_for_branches = event
-                    self.pos += 1
-                    continue
-                t = self._parse_event_transition_from_groups(
-                    event, mt.group(3), mt.group(4), mt.group(5), mt.group(6)
-                )
-                node.transitions.append(t)
-                last_event_for_branches = event
+            m = _RE_TRANSITION.match(line)
+            if m:
+                pending.append((m.group(1), m.group(2), m.group(3)))
                 self.pos += 1
                 continue
 
             self.pos += 1
 
-        return node
+        # Resolve transitions after all state blocks are parsed
+        for source, target, label in pending:
+            self._resolve_transition(source, target, label, parent, states, ancestor_states)
 
-    def _parse_event_transition(self, m, wildcard=False) -> Transition:
-        return self._parse_event_transition_from_groups(
-            "*" if wildcard else m.group(2),
-            m.group(2) if wildcard else m.group(3),
-            m.group(3) if wildcard else m.group(4),
-            m.group(4) if wildcard else m.group(5),
-            m.group(5) if wildcard else m.group(6),
-        )
+    def _handle_comment(self, parent: StateNode | None, states: dict[str, StateNode]):
+        stripped = self.lines[self.pos].strip()
+        content = stripped[2:].strip()
 
-    def _parse_event_transition_from_groups(
-        self, event, guards_str, actions_str, reenter_str, target_str
-    ) -> Transition:
-        return Transition(
-            event=event,
-            guards=_parse_guards(guards_str),
-            actions=_parse_actions(actions_str),
-            reenter=reenter_str == "@",
-            target=target_str.strip() if target_str else None,
-        )
+        if parent is None:
+            if content.startswith('machine:'):
+                self.machine.id = content[8:].strip()
+                self.pos += 1
+                return
+            if content.startswith('version:'):
+                self.machine.version = content[8:].strip()
+                self.pos += 1
+                return
+            for prefix, attr in [('context:', 'context'), ('input:', 'input'),
+                                  ('output:', 'output'), ('types:', 'types')]:
+                if content.startswith(prefix):
+                    setattr(self.machine, attr, self._collect_multiline_value(prefix))
+                    return
+            m = re.match(r'on\s+\*\s*:\s*(.+)', content)
+            if m:
+                self._parse_wildcard(m.group(1).strip())
+                self.pos += 1
+                return
+        else:
+            if content.startswith('entry:'):
+                parent.entry.extend(_parse_actions(content[6:].strip()))
+                self.pos += 1
+                return
+            if content.startswith('exit:'):
+                parent.exit.extend(_parse_actions(content[5:].strip()))
+                self.pos += 1
+                return
+            if content.startswith('invoke:'):
+                self._parse_invoke(content[7:].strip(), parent)
+                self.pos += 1
+                return
+            if content.startswith('tags:'):
+                parent.tags = [t.strip() for t in content[5:].split(',')]
+                self.pos += 1
+                return
+            if content.startswith('type:'):
+                tval = content[5:].strip()
+                if tval == 'history.deep':
+                    parent.state_type = 'history'
+                    parent.history_type = 'deep'
+                elif tval == 'history':
+                    parent.state_type = 'history'
+                    parent.history_type = 'shallow'
+                else:
+                    parent.state_type = tval
+                self.pos += 1
+                return
+            if content.startswith('description:'):
+                parent.description = content[12:].strip().strip('"')
+                self.pos += 1
+                return
+            if content.startswith('id:'):
+                parent.state_id = content[3:].strip()
+                self.pos += 1
+                return
+            if content.startswith('initial:'):
+                parent.initial = content[8:].strip()
+                self.pos += 1
+                return
+            if content.startswith('target:'):
+                parent.history_target = content[7:].strip()
+                self.pos += 1
+                return
+            if content.startswith('output:'):
+                parent.output = content[7:].strip()
+                self.pos += 1
+                return
+
+        self.pos += 1
+
+    def _collect_multiline_value(self, prefix: str) -> str:
+        stripped = self.lines[self.pos].strip()
+        content = stripped[2:].strip()
+        value = content[len(prefix):].strip()
+        self.pos += 1
+
+        if '{' in value and '}' not in value:
+            depth = value.count('{') - value.count('}')
+            while depth > 0 and self.pos < len(self.lines):
+                ns = self.lines[self.pos].strip()
+                if not ns.startswith('%%'):
+                    break
+                nc = ns[2:].strip()
+                value += '\n' + nc
+                depth += nc.count('{') - nc.count('}')
+                self.pos += 1
+        elif '(' in value and ')' not in value:
+            depth = value.count('(') - value.count(')')
+            while depth > 0 and self.pos < len(self.lines):
+                ns = self.lines[self.pos].strip()
+                if not ns.startswith('%%'):
+                    break
+                nc = ns[2:].strip()
+                value += '\n' + nc
+                depth += nc.count('(') - nc.count(')')
+                self.pos += 1
+
+        return value
+
+    def _parse_invoke(self, text: str, parent: StateNode):
+        m = re.match(r'(\w+)(.*)', text)
+        if not m:
+            return
+        src = m.group(1)
+        rest = m.group(2).strip()
+        mods = _parse_invoke_modifiers(rest)
+        parent.invocations.append(Invocation(
+            src=mods.get('src', src),
+            id=mods.get('id'),
+            input=mods.get('input'),
+            system_id=mods.get('systemId'),
+        ))
+
+    def _parse_wildcard(self, text: str):
+        target = None
+        reenter = False
+        m = re.search(r'->([@]?)\s*(\S+)\s*$', text)
+        if m:
+            reenter = m.group(1) == '@'
+            target = m.group(2)
+            text = text[:m.start()].strip()
+        guards, actions = self._parse_guard_actions(text)
+        self.machine.wildcard_transitions.append(Transition(
+            event='*', guards=guards, actions=actions,
+            target=target, reenter=reenter,
+        ))
+
+    def _resolve_transition(self, source: str, target: str, label: str | None,
+                            parent: StateNode | None, states: dict[str, StateNode],
+                            ancestor_states: list[dict[str, StateNode]]):
+        # [*] --> X = initial
+        if source == '[*]':
+            if parent is None:
+                self.machine.initial = target
+            else:
+                parent.initial = target
+            states.setdefault(target, StateNode(name=target))
+            return
+
+        # X --> [*] = final
+        if target == '[*]':
+            node = states.setdefault(source, StateNode(name=source))
+            node.state_type = 'final'
+            return
+
+        # Ensure source exists in current scope
+        src_node = states.setdefault(source, StateNode(name=source))
+
+        # Create target in current scope only if not found in any ancestor
+        if target not in states:
+            found_in_ancestor = any(target in a for a in ancestor_states)
+            if not found_in_ancestor:
+                states[target] = StateNode(name=target)
+
+        if not label:
+            src_node.transitions.append(Transition(target=target))
+            return
+
+        label = label.strip()
+        event, guards, actions, reenter, delay = self._parse_label(label)
+
+        # Self-loop without reenter = internal transition (no target in XState)
+        actual_target = target
+        if source == target and not reenter:
+            actual_target = None
+
+        t = Transition(target=actual_target, guards=guards, actions=actions,
+                       reenter=reenter, delay=delay)
+
+        if event == 'always':
+            src_node.always.append(t)
+        elif delay is not None:
+            src_node.after.append(t)
+        elif event == 'done.state':
+            src_node.on_done.append(t)
+        elif event == 'done':
+            if src_node.invocations:
+                src_node.invocations[-1].on_done.append(t)
+            else:
+                src_node.on_done.append(t)
+        elif event == 'error':
+            if src_node.invocations:
+                src_node.invocations[-1].on_error.append(t)
+            else:
+                t.event = 'error'
+                src_node.transitions.append(t)
+        else:
+            t.event = event
+            src_node.transitions.append(t)
+
+    def _parse_label(self, label: str):
+        """Parse label → (event, guards, actions, reenter, delay)."""
+        reenter = False
+        if label.endswith('@reenter'):
+            reenter = True
+            label = label[:-8].strip()
+
+        # after DELAY ...
+        m = re.match(r'after\s+(\d+|\w+)(.*)', label)
+        if m:
+            d = m.group(1)
+            try:
+                d = int(d)
+            except ValueError:
+                pass
+            guards, actions = self._parse_guard_actions(m.group(2).strip())
+            return None, guards, actions, reenter, d
+
+        # always
+        if label == 'always' or label.startswith('always ') or label.startswith('always['):
+            guards, actions = self._parse_guard_actions(label[6:].strip())
+            return 'always', guards, actions, reenter, None
+
+        # done.state
+        if label == 'done.state' or label.startswith('done.state '):
+            guards, actions = self._parse_guard_actions(label[10:].strip())
+            return 'done.state', guards, actions, reenter, None
+
+        # done
+        if label == 'done' or re.match(r'done[\s\[/]', label):
+            guards, actions = self._parse_guard_actions(label[4:].strip())
+            return 'done', guards, actions, reenter, None
+
+        # error
+        if label == 'error' or re.match(r'error[\s\[/]', label):
+            guards, actions = self._parse_guard_actions(label[5:].strip())
+            return 'error', guards, actions, reenter, None
+
+        # Regular event
+        m = re.match(r'(\*|[A-Za-z_]\w*)(.*)', label)
+        if m:
+            guards, actions = self._parse_guard_actions(m.group(2).strip())
+            return m.group(1), guards, actions, reenter, None
+
+        return label, None, [], reenter, None
+
+    def _parse_guard_actions(self, text: str):
+        guards = None
+        actions = []
+        if not text:
+            return guards, actions
+        m = re.match(r'\[([^\]]*)\](.*)', text)
+        if m:
+            guards = _parse_guards(m.group(1))
+            text = m.group(2).strip()
+        if text.startswith('/'):
+            actions = _parse_actions(text[1:].strip())
+        return guards, actions
