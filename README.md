@@ -35,11 +35,11 @@ state yellow
 ## Installation
 
 ```bash
-# With uv (recommended)
-uv tool install ./xstate-mermaid
+# One-liner via uvx (no install needed)
+uvx --from "git+https://github.com/vgmakeev/xstate-mermaid.git" xstate-dsl dsl2xstate machine.dsl
 
-# Or with pip
-pip install ./xstate-mermaid
+# Or install globally
+uv tool install "git+https://github.com/vgmakeev/xstate-mermaid.git"
 ```
 
 ## Usage
